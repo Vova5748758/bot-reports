@@ -2,6 +2,7 @@ import os
 import requests
 import json
 from pathlib import Path
+from datetime import datetime, timedelta
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
@@ -43,6 +44,16 @@ reports = [
             {"text": "привет", "date": "2026-08-20"},
             {"text": "ты дурак", "date": "2026-09-15"},
         ],
+    },
+    {
+        "id": 103,
+        "type": "message",
+        "reporter": "test3",
+        "target_user": "petya",
+        "target_user_id": "12345",
+        "message_text": "новая жалоба для проверки третьей кнопки",
+        "message_date": "2026-09-19",
+        "reason": "флуд",
     },
 ]
 # ============================================================
@@ -86,6 +97,7 @@ for r in reports:
     keyboard = {
         "inline_keyboard": [[
             {"text": "🚫 Заблокировать", "callback_data": f"ban_{r['id']}"},
+            {"text": "⚠️ Предупреждение", "callback_data": f"warn_{r['id']}"},
             {"text": "🙈 Игнорировать",  "callback_data": f"ignore_{r['id']}"},
         ]]
     }
@@ -132,7 +144,7 @@ for upd in upd_resp.get("result", []):
         entry = next((s for s in seen if s["report_id"] == report_id), None)
         target_id = entry["report"].get("target_user_id") if entry else None
 
-        if MESSENGER_API and target_id:
+        if MESSENGER_API and MESSENGER_API != "none" and target_id:
             try:
                 headers = {}
                 if MESSENGER_SECRET:
@@ -147,6 +159,33 @@ for upd in upd_resp.get("result", []):
                 print(f"Ошибка удаления: {e}")
 
         new_text = original_text + "\n\n✅ <b>ПОЛЬЗОВАТЕЛЬ ЗАБЛОКИРОВАН</b>"
+
+    elif data.startswith("warn_"):
+        report_id = int(data.split("_", 1)[1])
+        entry = next((s for s in seen if s["report_id"] == report_id), None)
+        target_id = entry["report"].get("target_user_id") if entry else None
+
+        until = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
+
+        if MESSENGER_API and MESSENGER_API != "none" and target_id:
+            try:
+                headers = {}
+                if MESSENGER_SECRET:
+                    headers["X-Secret"] = MESSENGER_SECRET
+                requests.post(
+                    f"{MESSENGER_API}/warn_user",
+                    json={"user_id": target_id, "days": 7, "until": until},
+                    headers=headers,
+                    timeout=10,
+                )
+            except Exception as e:
+                print(f"Ошибка предупреждения: {e}")
+
+        new_text = (
+            f"⚠️ <b>ПРЕДУПРЕЖДЕНИЕ ВЫДАНО</b>\n"
+            f"Блокировка на 7 дней, до <b>{until}</b>\n\n"
+            + original_text
+        )
 
     elif data.startswith("ignore_"):
         new_text = "🙈 <b>Проигнорировано</b>\n\n" + original_text
